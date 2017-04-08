@@ -7,7 +7,7 @@ import signal
 from collections import deque, namedtuple
 
 Ok = namedtuple('Ok', ['val', 'msg'])
-Err = namedtuple('Err', ['err'])
+Err = namedtuple('Err', ['err', 'loc_s', 'loc_e'])
 
 Inl = namedtuple('Inl', ['val'])
 Inr = namedtuple('Inr', ['val'])
@@ -29,8 +29,9 @@ def parse_response(xml):
     if xml.get('val') == 'good':
         return Ok(parse_value(xml[0]), None)
     elif xml.get('val') == 'fail':
-        print('err: %s' % ET.tostring(xml))
-        return Err(parse_error(xml))
+        # Don't print the error immediately : let the caller decide wether
+        # it must be printed and in which way
+        return parse_error(xml)
     else:
         assert False, 'expected "good" or "fail" in <value>'
 
@@ -179,6 +180,9 @@ def get_answer():
                             messageNode = messageNode + "\n\n" + parse_value(c[2])
                         else:
                             messageNode = parse_value(c[2])
+                    # Extract messages from feedbacks to handle errors
+                    if c.tag == 'feedback' and c[1].get('val') == 'message':
+                        messageNode = parse_value(c[1][0][2])
                 if shouldWait:
                     continue
                 else:
@@ -186,6 +190,9 @@ def get_answer():
                     if messageNode is not None:
                         if isinstance(vp, Ok):
                             return Ok(vp.val, messageNode)
+                        elif isinstance(vp, Err):
+                            # Override error message : coq provides one
+                            return Err(messageNode, vp.loc_s, vp.loc_e)
                     return vp
             except ET.ParseError:
                 continue
